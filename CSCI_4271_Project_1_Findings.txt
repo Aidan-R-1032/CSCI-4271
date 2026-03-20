@@ -1,0 +1,117 @@
+confirm_registration
+	|_ complete_registration
+		|_ get_upload_password
+		|_ hexlify_into
+
+
+* complete_registration: 
+	
+	 strcat(cmdstring,"/");
+    	 hexlify_into(cmdstring,upw,8);
+    	 strcat(cmdstring,"/");
+    	 strcat(cmdstring,token);
+	
+	+ If any part of the input (email, upw, or token) contains special characters or shell metacharacters, it could lead to command injection.
+ 
+* get_upload_password:
+	+ strcpy(to_hash,"bcpwmuploadkey||");
+		- using a hardcoded string for salting passwords is a risk: if the value is discovered, attackers may be able to reverse-engineer the process to generate passwords or keys
+* hexlify_into:
+	+ possible buffer overflows
+
+In summary, complete_registration is a major security concern due to the use of strcat without validating email, upw, or token - email primarily being the issue.
+In the terminal, "./bcpwm-cli -i ha ha ha ha ;/bin/sh" would open a shell!
+
+
+
+generate_password
+	|_ gen_password
+	|	|_ get_pwr_filename
+	|	|	|_ get_rule_dir
+	|	|		|_ get_bcpwm_dir
+	|	|_ get_site_json_file
+	|	|	|_ get_bcpwm_dir
+	|	|	|_ parse_json_file
+	|	|	|	|_ has_close_braces
+	|	|	|	|_ parse_rexes
+	|	|	|	|_ write_pwr_filename
+	|	|	|_ get_pwr_filename
+	|	|_ get_cloud_pwr_file
+	|	|	|_ get_rule_dir
+	|	|	|_ hexlify_into
+	|	|	|_ get_cloud_base_url
+	|    	|_ parse_pwr_file
+	|		|_ get_pwr_filename
+	|_ set_site_password
+	|_ write_password_file
+		|_ hexlify_into
+		|_ write_password_entry_file
+
+
+* get_bcpwm_dir: 
+	+ use of sprint without checking the size of fn_out could result in a buffer overflow
+	+ produces something like: '/home/user/.bcpwm/'
+
+* get_rule_dir: 
+	+ appends "pwrules/" to the end of the result from get_bcpwm_dir
+	+ '/home/user/.bcpwm/pwrules/'
+
+* get_pwr_filename:
+	+ uses the site to generate a sitehash, and then it appends the hexadecimal representation of the first 16 bytes of the hash to a base directory obtained by a call to 
+	  get_rule_dir and appends the .pwr extension to create a file
+	+ `/home/user/.bcpwm/pwrules/${hex string of sitehash[16]}.pwr`
+
+* get_site_json_file:
+	+ sprintf(cmdstring, "wget -q -T 2 -t 2 --ca-certificate={/etc/bci/bci-cert/bcpwm.pem} https://%s/bcpwm_rule.json", site);
+		- seems concerning!
+
+
+* get_cloud_pwr_file
+	+ get_rule_dir(rdir);
+	+ sprintf(cmdstring, "cd %s ; wget -q -T 2 --ca-certificate={/etc/bci/bci-cert/bcpwm.pem} --no-proxy %s/get_rule/", rdir, get_cloud_base_url());
+
+* parse_pwr_file
+	+ memory corruption issue: in the for-loop, if num_rex is larger than MAX_REGEX_RULES, the loop will perform more iteratiosn than intended - a malicious file passed in could exploit this
+
+In summary, selecting (G)enerate Password: and then entering ;/bin/sh; will open another shell because of the string formatting in get_site_json_file!
+
+
+interact_loop
+	|_ print_options
+	|_ list_passwords
+	|_ trim
+	|_ get_password
+	|_ generate_password 
+	|_ sync_with_cloud
+	|	|_ sync_pwdb
+	|		|_ write_password_file
+	|		|_ get_upload_password
+	|		|_ hexlify_into
+	|		|_ sync_cloud 
+	|			|_ get_bcpwm_dir
+	|_ init_db
+	|_ read_password_file
+	|	|_ get_pw_dir
+	|	|	|_ get_bcpwm_dir(X)
+	|	|_ read_password_entry_file
+	|	|	|_ crypto_secretbox_open
+	|	|_ hexlify_into
+	|_ register_email
+	|_ confirm_registration
+	|_ get_account
+	|_ add_rules_from_file
+		|_ parse_json_file
+
+
+* trim:
+	+ removes the first \n character it sees, but it doesn't manage other instances of whitespace
+
+* sync_cloud:
+	+ sprintf(cmdstring, "tar cf %s.tar --warning=none pwdb pwrules", hacct);
+	+ if (system(cmdstring) < 0) return -3;
+		- again, command strings are not great
+
+* read_password_entry_file
+	+ mprotect(pwfile_key, crypto_secretbox_KEYBYTES, PROT_READ);
+	+ the encryption key, pwfile_key, is temporarily readable after this call, so an attacker could use gdb to obtain the encryption key to decrypt sensitive files
+

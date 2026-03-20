@@ -1,0 +1,3 @@
+[submodule "bcpwm-POC-Exploits"]
+	path = bcpwm-POC-Exploits
+	url = https://github.umn.edu/ismae014/bcpwm-Server-POC-Exploits

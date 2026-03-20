@@ -1,0 +1,74 @@
+3)
+	-  “Confused Deputy” bug happens when a program that needs access to a resource or file for one reason can be “manipulated” into accessing a resource or file inappropriately. For example, we might have a program that runs as root (using the setuid bit) that can be used to update the system login message given a text file
+___________________________________________________________________ 	
+___________________________________________________________________
+#include <iostream>
+#include <fstream>
+using namespace std;
+
+int print_usage() {
+	cout << "set-motd: copy input file to login message" << endl;
+	cout << "requires 1 argument" << endl;
+	return 1;
+}
+
+int main(int argc, char **argv) {
+	if (argc < 2) return print_usage();
+	ofstream motd("/etc/motd");
+	ifstream tocopy(argv[1]);
+	while (tocopy) {
+		motd.put(tocopy.get());
+	}
+	tocopy.close();
+	motd.close();
+	return 0;
+}
+___________________________________________________________________
+___________________________________________________________________
+
+	a) Why is this a confused deputy? (Hint: what might we use as an input file?)
+
+		The program confuses the users privileges with it's privileges - the user could provide a symbolic link to a file that they cannot read and the program would copy the program into the /etc/motd directory which would allow the user the ability to view the file contents
+ 
+4) We could resolve this issue by using the setuid functions described in class and in chapter 3 of Wheeler. Describe how to modify the program to do so.
+
+	setuid() allows a process to change its user ID so we can change it to use the real UID - the UID of the user who started the process - so that the deputy will not be confused. We can alter the code so that it looks like this: 
+
+ ___________________________________________________________________
+#include <iostream>
+#include <fstream>
+using namespace std;
+
+int print_usage() {
+	cout << "set-motd: copy input file to login message" << endl;
+	cout << "requires 1 argument" << endl;
+	return 1;
+}
+
+int main(int argc, char **argv) {
+
+	// ======= NEW CODE =======
+	uid_t ruid = getuid(); // gets the real user ID
+	if(setuid(ruid)) == -1) { // sets the process to have the real uid
+		perror("setuid");
+		return 1;
+	}
+	// ======= NEW CODE =======
+
+	if (argc < 2) return print_usage();
+	ofstream motd("/etc/motd");
+	ifstream tocopy(argv[1]);
+	while (tocopy) {
+		motd.put(tocopy.get());
+	}
+	tocopy.close();
+	motd.close();
+	return 0;
+}
+___________________________________________________________________
+___________________________________________________________________
+
+c)  Suppose we wanted to limit the set of users who could run this program to those belonging to the group messagers. What permissions settings should we set on the executable to accomplish this?
+
+	$ sudo chown :messagers <program_name> # make messagers the owners of this program
+	$ sudo chmod 2750 # sets the setgid (2), gives owners full permissions (7), gives the group read and execute permissions (5), and denies permissions to others (0)
